@@ -1,5 +1,5 @@
 """
-HTML template generation for ESP8266 Jukebox
+HTML template generation for MP3 Streamer web interface.
 """
 import os
 from config import UPLOAD_DIR
@@ -29,7 +29,7 @@ def generate_html_page(current_track):
     <!DOCTYPE html>
     <html>
     <head>
-        <title>ESP8266 Jukebox DJ</title>
+        <title>Yarsa MP3 Streamer DJ</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <script src="https://cdn.tailwindcss.com"></script>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
@@ -45,7 +45,7 @@ def generate_html_page(current_track):
             
             <header class="text-center border-b pb-4">
                 <h1 class="text-4xl font-extrabold text-blue-600 tracking-tight flex items-center justify-center space-x-3">
-                    <i class="fas fa-wifi"></i> <span>ESP8266 Jukebox DJ</span>
+                    <i class="fas fa-wifi"></i> <span>Yarsa MP3 Streamer</span>
                 </h1>
             </header>
             

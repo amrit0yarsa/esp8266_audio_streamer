@@ -1,5 +1,5 @@
 """
-Utility functions for ESP8266 Jukebox
+Utility functions for MP3 Streamer project.
 """
 import socket
 

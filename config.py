@@ -1,5 +1,5 @@
 """
-Configuration settings for ESP8266 Jukebox
+Configuration settings for ESP8266 Streamer
 """
 import os
 

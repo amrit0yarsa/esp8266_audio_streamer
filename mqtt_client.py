@@ -1,5 +1,5 @@
 """
-MQTT client management for ESP8266 Jukebox
+MQTT client management for MP3 Streamer
 """
 import paho.mqtt.client as mqtt
 from config import MQTT_BROKER_IP, MQTT_PORT, MQTT_TOPIC

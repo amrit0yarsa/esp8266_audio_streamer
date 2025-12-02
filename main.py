@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-ESP8266 Jukebox DJ - Main Server
+ESP8266 MP3 Streamer DJ - Main Server
 """
 import socketserver
 import os
 from config import PORT, HOST, UPLOAD_DIR
 import config
 from mqtt_client import mqtt_manager
-from handler import JukeboxHandler
+from handler import MP3StreamerHandler
 from utils import get_local_ip
 
 class ThreadingSimpleServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -27,7 +27,7 @@ def main():
     # Initialize server
     socketserver.TCPServer.allow_reuse_address = True
     
-    with ThreadingSimpleServer((HOST, PORT), JukeboxHandler) as httpd:
+    with ThreadingSimpleServer((HOST, PORT), MP3StreamerHandler) as httpd:
         print(f"--- ESP8266 DJ Station (MQTT Control) ---")
         print(f"1. Put MP3s in the '{UPLOAD_DIR}' folder OR upload via web.")
         print(f"2. Web UI: http://{get_local_ip()}:{PORT}")

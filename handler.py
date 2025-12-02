@@ -3,16 +3,17 @@ HTTP request handler for ESP8266 Jukebox
 """
 import http.server
 import os
-import cgi
 import shutil
 import json
 import urllib.parse
+from email.parser import Parser
+from io import BytesIO
 from config import UPLOAD_DIR, CHUNK_SIZE
 import config
 from mqtt_client import mqtt_manager
 from templates import generate_html_page
 
-class JukeboxHandler(http.server.SimpleHTTPRequestHandler):
+class MP3StreamerHandler(http.server.SimpleHTTPRequestHandler):
     
     def handle_audio_stream(self):
         """Stream audio file to client."""
@@ -106,32 +107,50 @@ class JukeboxHandler(http.server.SimpleHTTPRequestHandler):
         # Handle File Upload
         if self.path == '/upload':
             try:
-                ctype, pdict = cgi.parse_header(self.headers['content-type'])
-                if ctype == 'multipart/form-data':
-                    pdict['boundary'] = bytes(pdict['boundary'], 'utf-8')
-                    content_length = int(self.headers.get('Content-Length', 0))
-                    environ = {
-                        'REQUEST_METHOD': 'POST',
-                        'CONTENT_TYPE': self.headers['Content-Type'],
-                        'CONTENT_LENGTH': str(content_length)
-                    }
-                               
-                    form = cgi.FieldStorage(fp=self.rfile, headers=self.headers, environ=environ)
-                    fileitem = form['file']
+                content_type = self.headers.get('Content-Type', '')
+                if 'multipart/form-data' in content_type:
+                    # Extract boundary
+                    boundary = content_type.split('boundary=')[1].strip()
+                    boundary_bytes = ('--' + boundary).encode()
+                    end_boundary = ('--' + boundary + '--').encode()
                     
-                    if fileitem.filename:
-                        filename_safe = os.path.basename(fileitem.filename)
-                        filepath = os.path.join(UPLOAD_DIR, filename_safe)
-                        with open(filepath, 'wb') as f:
-                            shutil.copyfileobj(fileitem.file, f)
-                        
-                        self.send_response(200)
-                        self.end_headers()
-                        self.wfile.write(json.dumps({"success": True, "filename": filename_safe}).encode('utf-8'))
-                        return
+                    content_length = int(self.headers.get('Content-Length', 0))
+                    body = self.rfile.read(content_length)
+                    
+                    # Parse multipart data
+                    parts = body.split(boundary_bytes)
+                    
+                    for part in parts:
+                        if b'Content-Disposition' in part and b'filename=' in part:
+                            # Extract filename
+                            lines = part.split(b'\r\n')
+                            for line in lines:
+                                if b'Content-Disposition' in line:
+                                    # Extract filename from header
+                                    disposition = line.decode('utf-8', errors='ignore')
+                                    if 'filename=' in disposition:
+                                        filename = disposition.split('filename=')[1].strip().strip('"')
+                                        filename_safe = os.path.basename(filename)
+                                        
+                                        # Find file data (after headers)
+                                        data_start = part.find(b'\r\n\r\n') + 4
+                                        data_end = part.rfind(b'\r\n')
+                                        file_data = part[data_start:data_end]
+                                        
+                                        # Save file
+                                        filepath = os.path.join(UPLOAD_DIR, filename_safe)
+                                        with open(filepath, 'wb') as f:
+                                            f.write(file_data)
+                                        
+                                        self.send_response(200)
+                                        self.end_headers()
+                                        self.wfile.write(json.dumps({"success": True, "filename": filename_safe}).encode('utf-8'))
+                                        return
                         
             except Exception as e:
                 print(f"Upload error: {e}")
+                import traceback
+                traceback.print_exc()
                 self.send_response(500)
                 self.end_headers()
                 self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode('utf-8'))
