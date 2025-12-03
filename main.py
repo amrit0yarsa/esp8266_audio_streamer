@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ESP8266 MP3 Streamer DJ - Main Server - UPDATED WITH RECORDING
+ESP8266 MP3 Streamer - Main Server - UPDATED WITH RECORDING
 """
 import socketserver
 import os
