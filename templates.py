@@ -1,5 +1,5 @@
 """
-HTML template generation for MP3 Streamer web interface.
+HTML template generation for MP3 Streamer web interface - UPDATED WITH RECORDING.
 """
 import os
 from config import UPLOAD_DIR
@@ -38,6 +38,13 @@ def generate_html_page(current_track):
                 background-color: #f3f4f6;
                 font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
             }}
+            .recording-pulse {{
+                animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+            }}
+            @keyframes pulse {{
+                0%, 100% {{ opacity: 1; }}
+                50% {{ opacity: 0.5; }}
+            }}
         </style>
     </head>
     <body class="p-4 sm:p-8">
@@ -66,6 +73,20 @@ def generate_html_page(current_track):
 
             <section class="space-y-4 pt-4 border-t border-gray-200">
                 <h2 class="text-2xl font-semibold text-gray-700 border-l-4 border-blue-500 pl-3">
+                    <i class="fas fa-microphone mr-2"></i> Record Audio
+                </h2>
+                <div class="p-4 bg-gray-50 rounded-lg shadow-inner space-y-3">
+                    <input type="text" id="recordingName" placeholder="Enter recording name (optional)" class="block w-full px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500">
+                    <button id="recordButton" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg shadow-md transition duration-150 ease-in-out flex items-center justify-center space-x-2">
+                        <i class="fas fa-circle"></i>
+                        <span id="recordButtonText">Start Recording</span>
+                    </button>
+                    <p id="recordingStatus" class="text-sm text-gray-500 text-center hidden">Recording in progress...</p>
+                </div>
+            </section>
+
+            <section class="space-y-4 pt-4 border-t border-gray-200">
+                <h2 class="text-2xl font-semibold text-gray-700 border-l-4 border-blue-500 pl-3">
                     <i class="fas fa-cloud-upload-alt mr-2"></i> Upload MP3
                 </h2>
                 <form id="uploadForm" onsubmit="handleUpload(event)" class="flex flex-col space-y-3 p-4 bg-gray-50 rounded-lg shadow-inner" enctype="multipart/form-data">
@@ -87,6 +108,11 @@ def generate_html_page(current_track):
         </div>
 
         <script>
+            let isRecording = false;
+            let mediaRecorder = null;
+            let audioChunks = [];
+            let audioStream = null;
+
             function showModal(title, message, isSuccess) {{
                 const overlay = document.getElementById('modalOverlay');
                 const content = document.getElementById('modalContent');
@@ -118,6 +144,85 @@ def generate_html_page(current_track):
                     overlay.classList.add('hidden');
                     window.location.reload(); 
                 }}, 300);
+            }}
+
+            async function handleRecordButton() {{
+                const recordButton = document.getElementById('recordButton');
+                const recordingStatus = document.getElementById('recordingStatus');
+                const recordingName = document.getElementById('recordingName');
+                const recordButtonText = document.getElementById('recordButtonText');
+
+                if (!isRecording) {{
+                    // Start Recording
+                    try {{
+                        audioStream = await navigator.mediaDevices.getUserMedia({{ audio: true }});
+                        mediaRecorder = new MediaRecorder(audioStream);
+                        audioChunks = [];
+
+                        mediaRecorder.ondataavailable = (event) => {{
+                            audioChunks.push(event.data);
+                        }};
+
+                        mediaRecorder.start();
+                        isRecording = true;
+
+                        recordButton.classList.add('recording-pulse');
+                        recordButton.classList.remove('bg-red-600', 'hover:bg-red-700');
+                        recordButton.classList.add('bg-red-800');
+                        recordButtonText.innerHTML = '<i class="fas fa-stop-circle"></i> <span>Stop Recording</span>';
+                        recordingStatus.classList.remove('hidden');
+                        recordingName.disabled = true;
+                    }} catch (error) {{
+                        console.error('Microphone access error:', error);
+                        showModal('Microphone Error', 'Unable to access microphone. Please check permissions.', false);
+                    }}
+                }} else {{
+                    // Stop Recording
+                    mediaRecorder.stop();
+                    recordButton.disabled = true;
+                    recordButtonText.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> <span>Saving...</span>';
+
+                    mediaRecorder.onstop = async () => {{
+                        try {{
+                            const audioBlob = new Blob(audioChunks, {{ type: 'audio/wav' }});
+                            const filename = recordingName.value.trim() || 'recording_' + Date.now();
+
+                            const formData = new FormData();
+                            formData.append('audio', audioBlob);
+
+                            const response = await fetch(`/record/save?name=${{encodeURIComponent(filename)}}`, {{
+                                method: 'POST',
+                                body: audioBlob
+                            }});
+
+                            const result = await response.json();
+
+                            if (result.success) {{
+                                isRecording = false;
+                                recordButton.classList.remove('recording-pulse');
+                                recordButton.classList.add('bg-red-600', 'hover:bg-red-700');
+                                recordButton.classList.remove('bg-red-800');
+                                recordButtonText.innerHTML = '<i class="fas fa-circle"></i> <span>Start Recording</span>';
+                                recordingStatus.classList.add('hidden');
+                                recordingName.disabled = false;
+                                recordingName.value = '';
+                                
+                                // Stop audio stream
+                                audioStream.getTracks().forEach(track => track.stop());
+                                
+                                showModal('Recording Saved', result.message, true);
+                            }} else {{
+                                showModal('Save Failed', result.message, false);
+                            }}
+                        }} catch (error) {{
+                            console.error('Error:', error);
+                            showModal('Recording Error', 'Failed to save recording: ' + error.message, false);
+                        }} finally {{
+                            recordButton.disabled = false;
+                            recordButtonText.innerHTML = '<i class="fas fa-circle"></i> <span>Start Recording</span>';
+                        }}
+                    }};
+                }}
             }}
 
             async function handleUpload(event) {{
@@ -196,6 +301,8 @@ def generate_html_page(current_track):
                 }})
                 .catch(error => console.error('Error during control action:', error));
             }}
+
+            document.getElementById('recordButton').addEventListener('click', handleRecordButton);
 
             window.addEventListener('load', () => {{
                 updateStatus();

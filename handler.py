@@ -1,5 +1,5 @@
 """
-HTTP request handler for ESP8266 Jukebox
+HTTP request handler for ESP8266 Jukebox - UPDATED WITH RECORDING
 """
 import http.server
 import os
@@ -12,6 +12,7 @@ from config import UPLOAD_DIR, CHUNK_SIZE, FFMPEG_PATH
 import config
 from mqtt_client import mqtt_manager
 from templates import generate_html_page
+from recorder import recorder
 
 import subprocess
 
@@ -104,6 +105,34 @@ class MP3StreamerHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(200)
             self.end_headers()
             self.wfile.write(b'OK: Selection cleared.')
+            return
+        
+        # Save Recording (receive audio from browser)
+        if self.path.startswith('/record/save'):
+            params = urllib.parse.parse_qs(self.path.split('?', 1)[1])
+            filename = params.get('name', ['recording'])[0]
+            
+            try:
+                content_length = int(self.headers.get('Content-Length', 0))
+                audio_data = self.rfile.read(content_length)
+                
+                success, message = recorder.save_recording(audio_data, filename)
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "success": success,
+                    "message": message
+                }).encode('utf-8'))
+            except Exception as e:
+                print(f"Save recording error: {e}")
+                self.send_response(500)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "success": False,
+                    "message": f"Error: {str(e)}"
+                }).encode('utf-8'))
             return
             
         # Handle File Upload

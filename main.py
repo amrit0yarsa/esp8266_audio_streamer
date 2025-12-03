@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ESP8266 MP3 Streamer DJ - Main Server
+ESP8266 MP3 Streamer DJ - Main Server - UPDATED WITH RECORDING
 """
 import socketserver
 import os
@@ -8,6 +8,7 @@ from config import PORT, HOST, UPLOAD_DIR
 import config
 from mqtt_client import mqtt_manager
 from handler import MP3StreamerHandler
+from recorder import recorder
 from utils import get_local_ip
 
 class ThreadingSimpleServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -32,6 +33,7 @@ def main():
         print(f"1. Put MP3s in the '{UPLOAD_DIR}' folder OR upload via web.")
         print(f"2. Web UI: http://{get_local_ip()}:{PORT}")
         print(f"3. MQTT Broker: {config.MQTT_BROKER_IP}:{config.MQTT_PORT} | Topic: {config.MQTT_TOPIC}")
+        print(f"4. Recording enabled: Start/stop via web interface")
         print("-" * 50)
         
         # Initialize state
@@ -41,6 +43,8 @@ def main():
             httpd.serve_forever()
         except KeyboardInterrupt:
             print("\nShutting down server.")
+            if recorder.recording_active:  # Fixed: Use attribute instead of method
+                recorder.stop_recording()
             mqtt_manager.disconnect()
 
 if __name__ == '__main__':
