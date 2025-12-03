@@ -14,6 +14,8 @@ from mqtt_client import mqtt_manager
 from templates import generate_html_page
 from recorder import recorder
 
+import re
+
 import subprocess
 
 class MP3StreamerHandler(http.server.SimpleHTTPRequestHandler):
@@ -143,12 +145,10 @@ class MP3StreamerHandler(http.server.SimpleHTTPRequestHandler):
                     # Extract boundary
                     boundary = content_type.split('boundary=')[1].strip()
                     boundary_bytes = ('--' + boundary).encode()
-                    end_boundary = ('--' + boundary + '--').encode()
-                    
+                    # Parsing multipart body
                     content_length = int(self.headers.get('Content-Length', 0))
                     body = self.rfile.read(content_length)
                     
-                    # Parse multipart data
                     parts = body.split(boundary_bytes)
                     
                     for part in parts:
@@ -159,39 +159,68 @@ class MP3StreamerHandler(http.server.SimpleHTTPRequestHandler):
                                 if b'Content-Disposition' in line:
                                     disposition = line.decode('utf-8', errors='ignore')
                                     if 'filename=' in disposition:
-                                        filename = disposition.split('filename=')[1].strip().strip('"')
-                                        filename_safe = os.path.basename(filename)
+                                        original_filename = disposition.split('filename=')[1].strip().strip('"')
                                         
+                                        # --- FILENAME SANITIZATION START ---
+                                        # Split name and extension
+                                        base_name, original_ext = os.path.splitext(original_filename)
+                                        if not original_ext:
+                                            original_ext = "" # Handle files without extension
+                                            
+                                        # Replace special chars with space, keep alphanumeric
+                                        sanitized_base = re.sub(r'[^a-zA-Z0-9]', ' ', base_name)
+                                        # Remove double spaces and strip
+                                        sanitized_base = re.sub(r'\s+', ' ', sanitized_base).strip()
+                                        
+                                        # Fallback if filename becomes empty
+                                        if not sanitized_base:
+                                            sanitized_base = "uploaded_track"
+
+                                        # Create new filename with .mp3 extension
+                                        filename_safe = f"{sanitized_base}.mp3"
+                                        # --- FILENAME SANITIZATION END ---
+
                                         # Find file data (after headers)
                                         data_start = part.find(b'\r\n\r\n') + 4
                                         data_end = part.rfind(b'\r\n')
                                         file_data = part[data_start:data_end]
                                         
-                                        # Save uploaded file
-                                        filepath = os.path.join(UPLOAD_DIR, filename_safe)
-                                        with open(filepath, 'wb') as f:
+                                        # Save TEMP file (with original extension to help ffmpeg detect format)
+                                        temp_filename = f"temp_{original_filename}"
+                                        temp_filepath = os.path.join(UPLOAD_DIR, temp_filename)
+                                        
+                                        with open(temp_filepath, 'wb') as f:
                                             f.write(file_data)
                                         
-                                        # --- OPTIMIZE MP3 to 64 kbps MONO ---
-                                        optimized_path = os.path.join(UPLOAD_DIR, f"opt_{filename_safe}")
+                                        # Define Final MP3 Path
+                                        final_mp3_path = os.path.join(UPLOAD_DIR, filename_safe)
+
+                                        # --- CONVERT ANY FORMAT TO MP3 (64 kbps MONO) ---
                                         try:
+                                            print(f"Converting {temp_filepath} to {final_mp3_path}...")
                                             subprocess.run([
                                                 FFMPEG_PATH,
-                                                "-y",               # overwrite
-                                                "-i", filepath,     # input file
+                                                "-y",               # overwrite if exists
+                                                "-i", temp_filepath,# input file (any format)
                                                 "-ac", "1",         # mono
                                                 "-ar", "22050",     # sample rate
                                                 "-b:a", "64k",      # 64 kbps bitrate
-                                                optimized_path
+                                                "-f", "mp3",        # Force mp3 format
+                                                final_mp3_path
                                             ], check=True)
 
-                                            # Replace original with optimized
-                                            os.remove(filepath)
-                                            os.rename(optimized_path, filepath)
-                                            print(f"Upload optimized to 64kbps: {filepath}")
+                                            print(f"Conversion successful: {final_mp3_path}")
+                                            
+                                            # Clean up temp file
+                                            if os.path.exists(temp_filepath):
+                                                os.remove(temp_filepath)
 
                                         except Exception as e:
                                             print(f"FFmpeg conversion failed: {e}")
+                                            # Clean up temp file on failure
+                                            if os.path.exists(temp_filepath):
+                                                os.remove(temp_filepath)
+                                            raise e # Re-raise to send error response
                                         
                                         self.send_response(200)
                                         self.end_headers()
@@ -211,7 +240,7 @@ class MP3StreamerHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"success": False, "error": "No file selected or invalid request."}).encode('utf-8'))
             return
-            
+
         # Handle File Delete
         if self.path.startswith('/delete'):
             params = urllib.parse.parse_qs(self.path.split('?', 1)[1])
