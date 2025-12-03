@@ -8,10 +8,12 @@ import json
 import urllib.parse
 from email.parser import Parser
 from io import BytesIO
-from config import UPLOAD_DIR, CHUNK_SIZE
+from config import UPLOAD_DIR, CHUNK_SIZE, FFMPEG_PATH
 import config
 from mqtt_client import mqtt_manager
 from templates import generate_html_page
+
+import subprocess
 
 class MP3StreamerHandler(http.server.SimpleHTTPRequestHandler):
     
@@ -126,7 +128,6 @@ class MP3StreamerHandler(http.server.SimpleHTTPRequestHandler):
                             lines = part.split(b'\r\n')
                             for line in lines:
                                 if b'Content-Disposition' in line:
-                                    # Extract filename from header
                                     disposition = line.decode('utf-8', errors='ignore')
                                     if 'filename=' in disposition:
                                         filename = disposition.split('filename=')[1].strip().strip('"')
@@ -137,10 +138,31 @@ class MP3StreamerHandler(http.server.SimpleHTTPRequestHandler):
                                         data_end = part.rfind(b'\r\n')
                                         file_data = part[data_start:data_end]
                                         
-                                        # Save file
+                                        # Save uploaded file
                                         filepath = os.path.join(UPLOAD_DIR, filename_safe)
                                         with open(filepath, 'wb') as f:
                                             f.write(file_data)
+                                        
+                                        # --- OPTIMIZE MP3 to 64 kbps MONO ---
+                                        optimized_path = os.path.join(UPLOAD_DIR, f"opt_{filename_safe}")
+                                        try:
+                                            subprocess.run([
+                                                FFMPEG_PATH,
+                                                "-y",               # overwrite
+                                                "-i", filepath,     # input file
+                                                "-ac", "1",         # mono
+                                                "-ar", "22050",     # sample rate
+                                                "-b:a", "64k",      # 64 kbps bitrate
+                                                optimized_path
+                                            ], check=True)
+
+                                            # Replace original with optimized
+                                            os.remove(filepath)
+                                            os.rename(optimized_path, filepath)
+                                            print(f"Upload optimized to 64kbps: {filepath}")
+
+                                        except Exception as e:
+                                            print(f"FFmpeg conversion failed: {e}")
                                         
                                         self.send_response(200)
                                         self.end_headers()

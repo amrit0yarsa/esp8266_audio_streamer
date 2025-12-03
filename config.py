@@ -17,3 +17,5 @@ MQTT_TOPIC = "jukebox/control/stream_id"
 # Global State
 CURRENT_TRACK = None
 STREAM_ID = 0
+
+FFMPEG_PATH = "./ffmpeg"  # <-- Make sure ffmpeg binary is in your project folder
